@@ -433,10 +433,6 @@ void handleSetTimer()
         if (newTimer >= 1 && newTimer <= 120)
         {
             timer_duration_millis = newTimer * 1000;
-
-            Serial.print("Timer updated to: ");
-            Serial.print(newTimer);
-            Serial.println(" seconds");
         }
 
         server.sendHeader("Location", "/");
@@ -490,7 +486,6 @@ void loop()
             start_time = millis();
             digitalWrite(SSR_CONTROL_PIN, HIGH);
             current_state = BREWING;
-            Serial.println("Started Brewing!");
         }
         break;
 
@@ -499,15 +494,6 @@ void loop()
         {
             digitalWrite(SSR_CONTROL_PIN, LOW);
             current_state = STOPPED;
-
-            if (!switch_pressed)
-            {
-                Serial.println("Stopped: Switch Released Early!");
-            }
-            else
-            {
-                Serial.println("Stopped: Timer over");
-            }
         }
         break;
 
@@ -515,7 +501,6 @@ void loop()
         if (!switch_pressed)
         {
             current_state = IDLE;
-            Serial.println("Switch finally released! Going back to idle. Ready for next shot");
         }
         break;
     }
