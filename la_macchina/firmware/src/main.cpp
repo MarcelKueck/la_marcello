@@ -6,15 +6,25 @@
 enum State
 {
     IDLE,
+    PRE_INFUSION,
     BREWING,
     STOPPED
 };
 
+//Timer Variables
 State current_state = IDLE;
 bool switch_pressed = false;
 unsigned long start_time = 0;
 unsigned long timer_duration_millis = DEFAULT_TIMER_SECONDS * 1000;
 
+//Pre Infusion Variables
+bool preinfusion_enabled = true;
+unsigned long preinfusion_duration_millis = 5000;
+unsigned long fill_pulse_duration_millis = 1000;
+bool fill_pulse_completed = false;
+unsigned long preinfusion_start_time = 0;
+
+//Web Variables
 WebServer server(WEB_SERVER_PORT);
 
 // Handler for status API (returns JSON)
@@ -28,6 +38,9 @@ void handleStatus()
     case IDLE:
         json += "IDLE";
         break;
+    case PRE_INFUSION:
+        json += "PRE_INFUSION";
+        break;
     case BREWING:
         json += "BREWING";
         break;
@@ -37,12 +50,26 @@ void handleStatus()
     }
 
     json += "\",";
-    json += "\"timerDuration\":";
+    json += "\"preinfusionEnabled\":";
+    json += preinfusion_enabled ? "true" : "false";
+    json += ",";
+    json += "\"preinfusionDuration\":";
+    json += preinfusion_duration_millis / 1000;
+    json += ",";
+    json += "\"fillPulseDuration\":";
+    json += fill_pulse_duration_millis / 1000;
+    json += ",";
+    json += "\"extractionDuration\":";
     json += timer_duration_millis / 1000;
     json += ",";
     json += "\"elapsed\":";
 
-    if (current_state == BREWING)
+    if (current_state == PRE_INFUSION)
+    {
+        unsigned long elapsed = (millis() - preinfusion_start_time) / 1000;
+        json += elapsed;
+    }
+    else if (current_state == BREWING)
     {
         unsigned long elapsed = (millis() - start_time) / 1000;
         json += elapsed;
@@ -55,7 +82,19 @@ void handleStatus()
     json += ",";
     json += "\"remaining\":";
 
-    if (current_state == BREWING)
+    if (current_state == PRE_INFUSION)
+    {
+        unsigned long elapsed = millis() - preinfusion_start_time;
+        if (elapsed < preinfusion_duration_millis)
+        {
+            json += (preinfusion_duration_millis - elapsed) / 1000;
+        }
+        else
+        {
+            json += "0";
+        }
+    }
+    else if (current_state == BREWING)
     {
         unsigned long elapsed = millis() - start_time;
         if (elapsed < timer_duration_millis)
@@ -171,6 +210,12 @@ void handleRoot()
             color: #4CAF50;
         }
         
+        .status-pre_infusion {
+            background: rgba(33, 150, 243, 0.2);
+            color: #2196F3;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
         .status-brewing {
             background: rgba(211, 47, 47, 0.2);
             color: #D32F2F;
@@ -196,6 +241,11 @@ void handleRoot()
             text-shadow: 0 2px 16px rgba(211, 47, 47, 0.3);
         }
         
+        .timer-display.preinfusion {
+            color: #2196F3;
+            text-shadow: 0 2px 16px rgba(33, 150, 243, 0.3);
+        }
+        
         .timer-label {
             color: #666;
             font-size: 0.75em;
@@ -207,6 +257,7 @@ void handleRoot()
             background: linear-gradient(135deg, #2d2d2d 0%, #3a3a3a 100%);
             border-radius: 16px;
             padding: 24px;
+            margin-bottom: 16px;
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
         
@@ -215,6 +266,65 @@ void handleRoot()
             font-size: 0.9em;
             margin-bottom: 12px;
             display: block;
+        }
+        
+        .toggle-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 12px 0;
+        }
+        
+        .toggle-label {
+            color: #e0e0e0;
+            font-size: 1em;
+            font-weight: 500;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 56px;
+            height: 28px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: 0.3s;
+            border-radius: 28px;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .toggle-slider {
+            background-color: #D32F2F;
+        }
+        
+        input:checked + .toggle-slider:before {
+            transform: translateX(28px);
         }
         
         .input-group {
@@ -314,6 +424,25 @@ void handleRoot()
             margin-top: 8px;
         }
         
+        .preinfusion-settings {
+            opacity: 1;
+            max-height: 500px;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+        
+        .preinfusion-settings.disabled {
+            opacity: 0.4;
+            max-height: 0;
+            pointer-events: none;
+        }
+        
+        .section-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 24px 0;
+        }
+        
         @media (max-width: 480px) {
             .container {
                 padding: 24px 16px;
@@ -342,18 +471,79 @@ void handleRoot()
     html += timer_duration_millis / 1000;
 
     html += R"rawliteral(.0</div>
-            <div class="timer-label">SECONDS</div>
+            <div id="timerLabel" class="timer-label">EXTRACTION TIME</div>
         </div>
         
         <div class="control-card">
-            <label class="control-label">Shot Duration</label>
+            <div class="toggle-container">
+                <span class="toggle-label">Pre-Infusion</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="preinfusionToggle" )rawliteral";
+
+    if (preinfusion_enabled)
+        html += "checked";
+
+    html += R"rawliteral(>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            
+            <div id="preinfusionSettings" class="preinfusion-settings">
+                <label class="control-label">Pre-Infusion Time</label>
+                <div class="slider-container">
+                    <input type="range" id="preinfusionSlider" min="0" max="10" step="0.5" value=")rawliteral";
+
+    html += String(preinfusion_duration_millis / 1000.0, 1);
+
+    html += R"rawliteral(" oninput="syncPreinfusionSlider(this.value)">
+                    <div class="range-labels">
+                        <span>0s</span>
+                        <span>5s</span>
+                        <span>10s</span>
+                    </div>
+                </div>
+                
+                <div class="input-group">
+                    <input type="number" id="preinfusionInput" min="0" max="10" step="0.5" value=")rawliteral";
+
+    html += String(preinfusion_duration_millis / 1000.0, 1);
+
+    html += R"rawliteral(" oninput="syncPreinfusionNumber(this.value)">
+                </div>
+                
+                <label class="control-label">Fill Pulse Duration</label>
+                <div class="slider-container">
+                    <input type="range" id="fillPulseSlider" min="0" max="2" step="0.1" value=")rawliteral";
+
+    html += String(fill_pulse_duration_millis / 1000.0, 1);
+
+    html += R"rawliteral(" oninput="syncFillPulseSlider(this.value)">
+                    <div class="range-labels">
+                        <span>0s</span>
+                        <span>1s</span>
+                        <span>2s</span>
+                    </div>
+                </div>
+                
+                <div class="input-group">
+                    <input type="number" id="fillPulseInput" min="0" max="2" step="0.1" value=")rawliteral";
+
+    html += String(fill_pulse_duration_millis / 1000.0, 1);
+
+    html += R"rawliteral(" oninput="syncFillPulseNumber(this.value)">
+                </div>
+                
+                <div class="section-divider"></div>
+            </div>
+            
+            <label class="control-label">Extraction Time</label>
             
             <div class="slider-container">
-                <input type="range" id="sliderInput" min="1" max="60" value=")rawliteral";
+                <input type="range" id="extractionSlider" min="1" max="60" value=")rawliteral";
 
     html += timer_duration_millis / 1000;
 
-    html += R"rawliteral(" oninput="syncSlider(this.value)">
+    html += R"rawliteral(" oninput="syncExtractionSlider(this.value)">
                 <div class="range-labels">
                     <span>1s</span>
                     <span>30s</span>
@@ -362,32 +552,79 @@ void handleRoot()
             </div>
             
             <div class="input-group">
-                <input type="number" id="numberInput" min="1" max="120" value=")rawliteral";
+                <input type="number" id="extractionInput" min="1" max="120" value=")rawliteral";
 
     html += timer_duration_millis / 1000;
 
-    html += R"rawliteral(" oninput="syncNumber(this.value)">
+    html += R"rawliteral(" oninput="syncExtractionNumber(this.value)">
             </div>
             
-            <button onclick="setTimer()">Set Timer</button>
+            <button onclick="saveSettings()">Save Settings</button>
         </div>
     </div>
     
     <script>
-        function syncSlider(value) {
-            document.getElementById('numberInput').value = value;
+        // Sync functions for pre-infusion
+        function syncPreinfusionSlider(value) {
+            document.getElementById('preinfusionInput').value = value;
         }
         
-        function syncNumber(value) {
-            const slider = document.getElementById('sliderInput');
+        function syncPreinfusionNumber(value) {
+            const slider = document.getElementById('preinfusionSlider');
             if (value >= slider.min && value <= slider.max) {
                 slider.value = value;
             }
         }
         
-        function setTimer() {
-            const value = document.getElementById('numberInput').value;
-            window.location.href = '/set?timer=' + value;
+        // Sync functions for fill pulse
+        function syncFillPulseSlider(value) {
+            document.getElementById('fillPulseInput').value = value;
+        }
+        
+        function syncFillPulseNumber(value) {
+            const slider = document.getElementById('fillPulseSlider');
+            if (value >= slider.min && value <= slider.max) {
+                slider.value = value;
+            }
+        }
+        
+        // Sync functions for extraction
+        function syncExtractionSlider(value) {
+            document.getElementById('extractionInput').value = value;
+        }
+        
+        function syncExtractionNumber(value) {
+            const slider = document.getElementById('extractionSlider');
+            if (value >= slider.min && value <= slider.max) {
+                slider.value = value;
+            }
+        }
+        
+        // Toggle pre-infusion settings visibility
+        document.getElementById('preinfusionToggle').addEventListener('change', function() {
+            const settings = document.getElementById('preinfusionSettings');
+            if (this.checked) {
+                settings.classList.remove('disabled');
+            } else {
+                settings.classList.add('disabled');
+            }
+        });
+        
+        // Initialize visibility on page load
+        if (!document.getElementById('preinfusionToggle').checked) {
+            document.getElementById('preinfusionSettings').classList.add('disabled');
+        }
+        
+        function saveSettings() {
+            const preinfusionEnabled = document.getElementById('preinfusionToggle').checked ? 1 : 0;
+            const preinfusionTime = document.getElementById('preinfusionInput').value;
+            const fillPulseTime = document.getElementById('fillPulseInput').value;
+            const extractionTime = document.getElementById('extractionInput').value;
+            
+            window.location.href = '/set?preinfusion=' + preinfusionEnabled + 
+                                   '&preinfusionTime=' + preinfusionTime + 
+                                   '&fillPulse=' + fillPulseTime + 
+                                   '&extraction=' + extractionTime;
         }
         
         function updateStatus() {
@@ -396,14 +633,25 @@ void handleRoot()
                 .then(data => {
                     const statusEl = document.getElementById('status');
                     const timerEl = document.getElementById('timer');
+                    const labelEl = document.getElementById('timerLabel');
                     
-                    statusEl.textContent = data.state;
+                    // Update status badge
+                    statusEl.textContent = data.state.replace('_', '-');
                     statusEl.className = 'status-value status-' + data.state.toLowerCase();
                     
-                    if (data.state === 'BREWING') {
+                    // Update timer display and label based on state
+                    if (data.state === 'PRE_INFUSION') {
                         timerEl.textContent = data.remaining.toFixed(1);
+                        timerEl.className = 'timer-display preinfusion';
+                        labelEl.textContent = 'PRE-INFUSION';
+                    } else if (data.state === 'BREWING') {
+                        timerEl.textContent = data.remaining.toFixed(1);
+                        timerEl.className = 'timer-display';
+                        labelEl.textContent = 'EXTRACTION';
                     } else {
-                        timerEl.textContent = data.timerDuration.toFixed(1);
+                        timerEl.textContent = data.extractionDuration.toFixed(1);
+                        timerEl.className = 'timer-display';
+                        labelEl.textContent = 'EXTRACTION TIME';
                     }
                 })
                 .catch(err => console.error('Error fetching status:', err));
@@ -422,25 +670,70 @@ void handleRoot()
     server.send(200, "text/html", html);
 }
 
-// Handler for setting timer (/set)
+// Handler for setting timer and pre-infusion parameters (/set)
 void handleSetTimer()
 {
+    bool hasUpdates = false;
+
+    // Handle pre-infusion enabled/disabled
+    if (server.hasArg("preinfusion"))
+    {
+        preinfusion_enabled = (server.arg("preinfusion").toInt() == 1);
+        hasUpdates = true;
+    }
+
+    // Handle pre-infusion time
+    if (server.hasArg("preinfusionTime"))
+    {
+        float preinfusionTime = server.arg("preinfusionTime").toFloat();
+        if (preinfusionTime >= 0 && preinfusionTime <= 10)
+        {
+            preinfusion_duration_millis = preinfusionTime * 1000;
+            hasUpdates = true;
+        }
+    }
+
+    // Handle fill pulse duration
+    if (server.hasArg("fillPulse"))
+    {
+        float fillPulse = server.arg("fillPulse").toFloat();
+        if (fillPulse >= 0 && fillPulse <= 2)
+        {
+            fill_pulse_duration_millis = fillPulse * 1000;
+            hasUpdates = true;
+        }
+    }
+
+    // Handle extraction time
+    if (server.hasArg("extraction"))
+    {
+        int extractionTime = server.arg("extraction").toInt();
+        if (extractionTime >= 1 && extractionTime <= 120)
+        {
+            timer_duration_millis = extractionTime * 1000;
+            hasUpdates = true;
+        }
+    }
+
+    // Legacy support for old "timer" parameter
     if (server.hasArg("timer"))
     {
         int newTimer = server.arg("timer").toInt();
-
-        // Validate range
         if (newTimer >= 1 && newTimer <= 120)
         {
             timer_duration_millis = newTimer * 1000;
+            hasUpdates = true;
         }
+    }
 
+    if (hasUpdates)
+    {
         server.sendHeader("Location", "/");
         server.send(303);
     }
     else
     {
-        server.send(400, "text/plain", "Missing timer parameter");
+        server.send(400, "text/plain", "No valid parameters");
     }
 }
 
@@ -483,9 +776,29 @@ void loop()
     case IDLE:
         if (switch_pressed)
         {
+            preinfusion_start_time = millis();
+            fill_pulse_completed = false;
+            digitalWrite(SSR_CONTROL_PIN, HIGH);
+            current_state = PRE_INFUSION;
+        }
+        break;
+
+    case PRE_INFUSION:
+        if (!preinfusion_enabled || millis() - preinfusion_start_time >= preinfusion_duration_millis)
+        {
             start_time = millis();
             digitalWrite(SSR_CONTROL_PIN, HIGH);
             current_state = BREWING;
+        }
+        else if (!switch_pressed)
+        {
+            digitalWrite(SSR_CONTROL_PIN, LOW);
+            current_state = STOPPED;
+        }
+        else if (millis() - preinfusion_start_time >= fill_pulse_duration_millis && !fill_pulse_completed)
+        {
+            digitalWrite(SSR_CONTROL_PIN, LOW);
+            fill_pulse_completed = true;
         }
         break;
 
