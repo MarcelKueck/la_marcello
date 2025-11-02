@@ -741,7 +741,7 @@ void setup()
 {
     Serial.begin(115200);
 
-    pinMode(MICROSWITCH_PIN, INPUT);
+    pinMode(MICROSWITCH_PIN, INPUT_PULLDOWN); //Prevent floating state
     pinMode(SSR_CONTROL_PIN, OUTPUT);
     digitalWrite(SSR_CONTROL_PIN, LOW);
 
