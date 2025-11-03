@@ -578,15 +578,40 @@ void handleRoot()
 
     html += R"rawliteral(" oninput="syncExtractionNumber(this.value)">
             </div>
-            
-            <button onclick="saveSettings()">Save Settings</button>
         </div>
     </div>
     
     <script>
+        let saveTimeout = null;
+        
+        // Auto-save function with debouncing
+        function autoSave() {
+            // Clear existing timeout to debounce rapid changes
+            if (saveTimeout) {
+                clearTimeout(saveTimeout);
+            }
+            
+            // Wait 500ms after last change before saving
+            saveTimeout = setTimeout(() => {
+                const preinfusionEnabled = document.getElementById('preinfusionToggle').checked ? 1 : 0;
+                const preinfusionTime = document.getElementById('preinfusionInput').value;
+                const fillPulseTime = document.getElementById('fillPulseInput').value;
+                const extractionTime = document.getElementById('extractionInput').value;
+                
+                // Send settings without redirecting
+                fetch('/set?preinfusion=' + preinfusionEnabled + 
+                      '&preinfusionTime=' + preinfusionTime + 
+                      '&fillPulse=' + fillPulseTime + 
+                      '&extraction=' + extractionTime)
+                    .then(() => console.log('Settings saved'))
+                    .catch(err => console.error('Error saving settings:', err));
+            }, 500);
+        }
+        
         // Sync functions for pre-infusion
         function syncPreinfusionSlider(value) {
             document.getElementById('preinfusionInput').value = value;
+            autoSave();
         }
         
         function syncPreinfusionNumber(value) {
@@ -594,11 +619,13 @@ void handleRoot()
             if (value >= slider.min && value <= slider.max) {
                 slider.value = value;
             }
+            autoSave();
         }
         
         // Sync functions for fill pulse
         function syncFillPulseSlider(value) {
             document.getElementById('fillPulseInput').value = value;
+            autoSave();
         }
         
         function syncFillPulseNumber(value) {
@@ -606,11 +633,13 @@ void handleRoot()
             if (value >= slider.min && value <= slider.max) {
                 slider.value = value;
             }
+            autoSave();
         }
         
         // Sync functions for extraction
         function syncExtractionSlider(value) {
             document.getElementById('extractionInput').value = value;
+            autoSave();
         }
         
         function syncExtractionNumber(value) {
@@ -618,9 +647,10 @@ void handleRoot()
             if (value >= slider.min && value <= slider.max) {
                 slider.value = value;
             }
+            autoSave();
         }
         
-        // Toggle pre-infusion settings visibility
+        // Toggle pre-infusion settings visibility and auto-save
         document.getElementById('preinfusionToggle').addEventListener('change', function() {
             const settings = document.getElementById('preinfusionSettings');
             if (this.checked) {
@@ -628,23 +658,12 @@ void handleRoot()
             } else {
                 settings.classList.add('disabled');
             }
+            autoSave();
         });
         
         // Initialize visibility on page load
         if (!document.getElementById('preinfusionToggle').checked) {
             document.getElementById('preinfusionSettings').classList.add('disabled');
-        }
-        
-        function saveSettings() {
-            const preinfusionEnabled = document.getElementById('preinfusionToggle').checked ? 1 : 0;
-            const preinfusionTime = document.getElementById('preinfusionInput').value;
-            const fillPulseTime = document.getElementById('fillPulseInput').value;
-            const extractionTime = document.getElementById('extractionInput').value;
-            
-            window.location.href = '/set?preinfusion=' + preinfusionEnabled + 
-                                   '&preinfusionTime=' + preinfusionTime + 
-                                   '&fillPulse=' + fillPulseTime + 
-                                   '&extraction=' + extractionTime;
         }
         
         function updateStatus() {
@@ -749,8 +768,7 @@ void handleSetTimer()
     if (hasUpdates)
     {
         saveSettings();
-        server.sendHeader("Location", "/");
-        server.send(303);
+        server.send(200, "text/plain", "Settings saved");
     }
     else
     {
