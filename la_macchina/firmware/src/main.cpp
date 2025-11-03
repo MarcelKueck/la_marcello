@@ -40,10 +40,10 @@ void saveSettings(){
 
 void loadSettings(){
     preferences.begin("shot-timer", true); //true = read-only mode
-    preinfusion_enabled = preferences.get("preinfusion", PREINFUSION_ENABLED_DEFAULT);
-    preinfusion_duration_millis = preferences.get("preinfusion_duration", PREINFUSION_DURATION_DEFAULT);
-    fill_pulse_duration_millis = preferences.get("fill_pulse", FILL_PULSE_DURATION_DEFAULT);
-    timer_duration_millis = preferences.get("extraction", EXTRACTION_DURATION_DEFAULT);
+    preinfusion_enabled = preferences.getBool("preinfusion", PREINFUSION_ENABLED_DEFAULT);
+    preinfusion_duration_millis = preferences.getULong("preinfusion_duration", PREINFUSION_DURATION_DEFAULT);
+    fill_pulse_duration_millis = preferences.getULong("fill_pulse", FILL_PULSE_DURATION_DEFAULT);
+    timer_duration_millis = preferences.getULong("extraction", EXTRACTION_DURATION_DEFAULT);
     preferences.end();
 }
 
