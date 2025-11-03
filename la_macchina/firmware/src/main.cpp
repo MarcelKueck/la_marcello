@@ -31,20 +31,32 @@ Preferences preferences;
 
 void saveSettings(){
     preferences.begin("shot-timer", false); //false = read/write mode
-    preferences.putBool("preinfusion", preinfusion_enabled);
-    preferences.putULong("preinfusion_duration", preinfusion_duration_millis);
+    preferences.putBool("preinf_en", preinfusion_enabled);
+    preferences.putULong("preinf_dur", preinfusion_duration_millis);
     preferences.putULong("fill_pulse", fill_pulse_duration_millis);
-    preferences.putULong("extraction", timer_duration_millis);
+    preferences.putULong("extract_dur", timer_duration_millis);
     preferences.end();
+    
+    Serial.println("Settings saved to NVS:");
+    Serial.printf("  Pre-infusion enabled: %s\n", preinfusion_enabled ? "true" : "false");
+    Serial.printf("  Pre-infusion duration: %lu ms\n", preinfusion_duration_millis);
+    Serial.printf("  Fill pulse duration: %lu ms\n", fill_pulse_duration_millis);
+    Serial.printf("  Extraction duration: %lu ms\n", timer_duration_millis);
 }
 
 void loadSettings(){
     preferences.begin("shot-timer", true); //true = read-only mode
-    preinfusion_enabled = preferences.getBool("preinfusion", PREINFUSION_ENABLED_DEFAULT);
-    preinfusion_duration_millis = preferences.getULong("preinfusion_duration", PREINFUSION_DURATION_DEFAULT);
+    preinfusion_enabled = preferences.getBool("preinf_en", PREINFUSION_ENABLED_DEFAULT);
+    preinfusion_duration_millis = preferences.getULong("preinf_dur", PREINFUSION_DURATION_DEFAULT);
     fill_pulse_duration_millis = preferences.getULong("fill_pulse", FILL_PULSE_DURATION_DEFAULT);
-    timer_duration_millis = preferences.getULong("extraction", EXTRACTION_DURATION_DEFAULT);
+    timer_duration_millis = preferences.getULong("extract_dur", EXTRACTION_DURATION_DEFAULT);
     preferences.end();
+    
+    Serial.println("Settings loaded from NVS:");
+    Serial.printf("  Pre-infusion enabled: %s\n", preinfusion_enabled ? "true" : "false");
+    Serial.printf("  Pre-infusion duration: %lu ms\n", preinfusion_duration_millis);
+    Serial.printf("  Fill pulse duration: %lu ms\n", fill_pulse_duration_millis);
+    Serial.printf("  Extraction duration: %lu ms\n", timer_duration_millis);
 }
 
 // Handler for status API (returns JSON)
@@ -714,10 +726,13 @@ void handleSetTimer()
 {
     bool hasUpdates = false;
 
+    Serial.println("Received settings update:");
+    
     // Handle pre-infusion enabled/disabled
     if (server.hasArg("preinfusion"))
     {
         preinfusion_enabled = (server.arg("preinfusion").toInt() == 1);
+        Serial.printf("  Pre-infusion: %s\n", preinfusion_enabled ? "enabled" : "disabled");
         hasUpdates = true;
     }
 
@@ -725,6 +740,7 @@ void handleSetTimer()
     if (server.hasArg("preinfusionTime"))
     {
         float preinfusionTime = server.arg("preinfusionTime").toFloat();
+        Serial.printf("  Pre-infusion time: %.1f s\n", preinfusionTime);
         if (preinfusionTime >= 0 && preinfusionTime <= 10)
         {
             preinfusion_duration_millis = preinfusionTime * 1000;
@@ -736,6 +752,7 @@ void handleSetTimer()
     if (server.hasArg("fillPulse"))
     {
         float fillPulse = server.arg("fillPulse").toFloat();
+        Serial.printf("  Fill pulse: %.1f s\n", fillPulse);
         if (fillPulse >= 0 && fillPulse <= 2)
         {
             fill_pulse_duration_millis = fillPulse * 1000;
@@ -747,6 +764,7 @@ void handleSetTimer()
     if (server.hasArg("extraction"))
     {
         int extractionTime = server.arg("extraction").toInt();
+        Serial.printf("  Extraction time: %d s\n", extractionTime);
         if (extractionTime >= 1 && extractionTime <= 120)
         {
             timer_duration_millis = extractionTime * 1000;
@@ -772,6 +790,7 @@ void handleSetTimer()
     }
     else
     {
+        Serial.println("  No valid parameters received");
         server.send(400, "text/plain", "No valid parameters");
     }
 }
