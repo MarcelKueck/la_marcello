@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <Preferences.h>
 #include "config.h"
 
 enum State
@@ -15,17 +16,36 @@ enum State
 State current_state = IDLE;
 bool switch_pressed = false;
 unsigned long start_time = 0;
-unsigned long timer_duration_millis = DEFAULT_TIMER_SECONDS * 1000;
+unsigned long timer_duration_millis;
 
 //Pre Infusion Variables
-bool preinfusion_enabled = true;
-unsigned long preinfusion_duration_millis = 5000;
-unsigned long fill_pulse_duration_millis = 1000;
+bool preinfusion_enabled;
+unsigned long preinfusion_duration_millis;
+unsigned long fill_pulse_duration_millis;
 bool fill_pulse_completed = false;
 unsigned long preinfusion_start_time = 0;
 
 //Web Variables
 WebServer server(WEB_SERVER_PORT);
+Preferences preferences;
+
+void saveSettings(){
+    preferences.begin("shot-timer", false); //false = read/write mode
+    preferences.putBool("preinfusion", preinfusion_enabled);
+    preferences.putULong("preinfusion_duration", preinfusion_duration_millis);
+    preferences.putULong("fill_pulse", fill_pulse_duration_millis);
+    preferences.putULong("extraction", timer_duration_millis);
+    preferences.end();
+}
+
+void loadSettings(){
+    preferences.begin("shot-timer", true); //true = read-only mode
+    preinfusion_enabled = preferences.get("preinfusion", PREINFUSION_ENABLED_DEFAULT);
+    preinfusion_duration_millis = preferences.get("preinfusion_duration", PREINFUSION_DURATION_DEFAULT);
+    fill_pulse_duration_millis = preferences.get("fill_pulse", FILL_PULSE_DURATION_DEFAULT);
+    timer_duration_millis = preferences.get("extraction", EXTRACTION_DURATION_DEFAULT);
+    preferences.end();
+}
 
 // Handler for status API (returns JSON)
 void handleStatus()
@@ -728,6 +748,7 @@ void handleSetTimer()
 
     if (hasUpdates)
     {
+        saveSettings();
         server.sendHeader("Location", "/");
         server.send(303);
     }
@@ -744,6 +765,9 @@ void setup()
     pinMode(MICROSWITCH_PIN, INPUT_PULLDOWN); //Prevent floating state
     pinMode(SSR_CONTROL_PIN, OUTPUT);
     digitalWrite(SSR_CONTROL_PIN, LOW);
+
+    // Load Settings from NVS
+    loadSettings();
 
     WiFi.begin(WIFI_SSID, WIFI_PWD);
 
